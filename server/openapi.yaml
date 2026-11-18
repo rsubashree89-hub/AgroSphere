@@ -1,0 +1,646 @@
+openapi: 3.1.0
+info:
+  title: AgroSphere API
+  version: 1.0.0
+  description: >
+    Authenticated farm-management API. Private resources are scoped to the
+    signed-in user. Weather data is provided by Open-Meteo; market prices are
+    user-reported; irrigation moisture simulation is explicitly labelled.
+servers:
+  - url: http://localhost:4000/api
+security:
+  - sessionCookie: []
+paths:
+  /health/live:
+    get:
+      security: []
+      summary: Check API liveness
+      responses:
+        "200":
+          description: API process is responsive
+  /health/ready:
+    get:
+      security: []
+      summary: Check database readiness
+      responses:
+        "200":
+          description: PostgreSQL is available
+        "503":
+          description: PostgreSQL is unavailable
+  /auth/register:
+    post:
+      security: []
+      summary: Register an account and create a session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegisterInput"
+      responses:
+        "201":
+          description: Account created; sets the HttpOnly session cookie
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "409":
+          description: Email is already registered
+  /auth/login:
+    post:
+      security: []
+      summary: Authenticate and create a session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginInput"
+      responses:
+        "200":
+          description: Authenticated; sets the HttpOnly session cookie
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          description: Invalid credentials
+  /auth/me:
+    get:
+      summary: Return the current authenticated user
+      responses:
+        "200":
+          description: Current user
+  /auth/logout:
+    post:
+      summary: Revoke the current session
+      responses:
+        "200":
+          description: Session revoked and cookie cleared
+  /farms:
+    get:
+      summary: List the current user's farms
+      responses:
+        "200":
+          description: Farm collection
+    post:
+      summary: Create a farm
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FarmInput"
+      responses:
+        "201":
+          description: Farm created
+        "400":
+          $ref: "#/components/responses/BadRequest"
+  /farms/{farmId}:
+    parameters:
+      - $ref: "#/components/parameters/farmId"
+    get:
+      summary: Read an owned farm
+      responses:
+        "200":
+          description: Farm details
+        "404":
+          description: Farm not found
+    put:
+      summary: Update an owned farm
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FarmInput"
+      responses:
+        "200":
+          description: Farm updated
+        "404":
+          description: Farm not found
+    delete:
+      summary: Delete an owned farm and its dependent records
+      responses:
+        "200":
+          description: Farm deleted
+        "404":
+          description: Farm not found
+  /farms/summary:
+    get:
+      summary: Aggregate farms, fields, and crops for the current user
+      responses:
+        "200":
+          description: Farm summary
+  /fields:
+    get:
+      summary: List fields in the current user's farms
+      parameters:
+        - in: query
+          name: farmId
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Field collection
+    post:
+      summary: Create a field in an owned farm
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FieldInput"
+      responses:
+        "201":
+          description: Field created
+        "404":
+          description: Farm not found
+  /fields/{fieldId}:
+    parameters:
+      - name: fieldId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      summary: Read an owned field
+      responses:
+        "200":
+          description: Field details
+        "404":
+          description: Field not found
+    put:
+      summary: Update an owned field
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FieldInput"
+      responses:
+        "200":
+          description: Field updated
+        "404":
+          description: Field or farm not found
+    delete:
+      summary: Delete an owned field
+      responses:
+        "200":
+          description: Field deleted
+        "404":
+          description: Field not found
+  /crops:
+    get:
+      summary: List crops in the current user's fields
+      parameters:
+        - in: query
+          name: fieldId
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Crop collection
+    post:
+      summary: Create a crop in an owned field
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CropInput"
+      responses:
+        "201":
+          description: Crop created
+        "404":
+          description: Field not found
+  /crops/{cropId}:
+    parameters:
+      - name: cropId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      summary: Read an owned crop
+      responses:
+        "200":
+          description: Crop details
+        "404":
+          description: Crop not found
+    put:
+      summary: Update an owned crop and record the update in crop history
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CropInput"
+      responses:
+        "200":
+          description: Crop updated
+        "404":
+          description: Crop or field not found
+    delete:
+      summary: Delete an owned crop
+      responses:
+        "200":
+          description: Crop deleted
+        "404":
+          description: Crop not found
+  /crops/{cropId}/records:
+    get:
+      summary: List history for an owned crop
+      parameters:
+        - name: cropId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Crop history
+  /dashboard:
+    get:
+      summary: Get dashboard aggregates, recent activity, and notifications
+      responses:
+        "200":
+          description: Dashboard data for current user
+  /weather/{farmId}:
+    get:
+      summary: Get and persist current Open-Meteo weather and a five-day forecast
+      parameters:
+        - $ref: "#/components/parameters/farmId"
+      responses:
+        "200":
+          description: Weather and forecast
+        "404":
+          description: Farm not found
+        "422":
+          description: Farm location could not be geocoded
+        "502":
+          description: Weather provider unavailable
+  /irrigation:
+    get:
+      summary: List the current user's irrigation records
+      responses:
+        "200":
+          description: Irrigation records
+    post:
+      summary: Record an owned field's moisture and water usage
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/IrrigationInput"
+      responses:
+        "201":
+          description: Record created; simulator use is labelled in the response
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          description: Field not found
+  /market-prices:
+    get:
+      summary: List user-reported prices for the current user's crops
+      responses:
+        "200":
+          description: Price observations, not a live market feed
+    post:
+      summary: Add a user-reported crop price
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MarketPriceInput"
+      responses:
+        "201":
+          description: User-reported observation created
+        "404":
+          description: Crop not found
+  /notifications:
+    get:
+      summary: List current user's notifications
+      responses:
+        "200":
+          description: Notifications
+  /notifications/{notificationId}/read:
+    patch:
+      summary: Mark an owned notification as read
+      parameters:
+        - name: notificationId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Updated notification
+        "404":
+          description: Notification not found
+  /reports/summary:
+    get:
+      summary: Get per-farm crop and recorded water summaries
+      parameters:
+        - in: query
+          name: from
+          schema:
+            type: string
+            format: date
+        - in: query
+          name: to
+          schema:
+            type: string
+            format: date
+      responses:
+        "200":
+          description: Farm report
+        "400":
+          $ref: "#/components/responses/BadRequest"
+  /reports/export/{format}:
+    get:
+      summary: Download a filtered report as CSV or PDF
+      parameters:
+        - name: format
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [csv, pdf]
+        - in: query
+          name: from
+          schema:
+            type: string
+            format: date
+        - in: query
+          name: to
+          schema:
+            type: string
+            format: date
+      responses:
+        "200":
+          description: Report download
+          content:
+            text/csv:
+              schema:
+                type: string
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+        "400":
+          $ref: "#/components/responses/BadRequest"
+  /admin/overview:
+    get:
+      summary: Get platform counts (admin only)
+      responses:
+        "200":
+          description: Platform overview
+        "403":
+          description: Administrator access required
+  /admin/users:
+    get:
+      summary: List platform users (admin only)
+      responses:
+        "200":
+          description: User list
+        "403":
+          description: Administrator access required
+  /admin/users/{userId}/active:
+    patch:
+      summary: Disable or restore an account (admin only)
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [active]
+              properties:
+                active:
+                  type: boolean
+      responses:
+        "200":
+          description: Account access updated; disabling revokes active sessions
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          description: Administrator access required
+        "409":
+          description: Cannot disable the last active administrator
+        "404":
+          description: User not found
+  /admin/activity:
+    get:
+      summary: List recent administrator account-access actions
+      responses:
+        "200":
+          description: Admin audit history
+        "403":
+          description: Administrator access required
+  /crop-health/{cropId}:
+    parameters:
+      - name: cropId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      summary: List image analyses for an owned crop
+      responses:
+        "200":
+          description: Analysis history
+    post:
+      summary: Submit a crop image to the configured AI service
+      description: Requires AI_SERVICE_URL and a configured Plant.id key in FastAPI.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [image]
+              properties:
+                image:
+                  type: string
+                  format: binary
+      responses:
+        "201":
+          description: Analysis result saved
+        "400":
+          description: Missing or invalid image
+        "503":
+          description: AI service is not configured or available
+components:
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: agrosphere_session
+  parameters:
+    farmId:
+      name: farmId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+  responses:
+    BadRequest:
+      description: Request validation failed
+  schemas:
+    RegisterInput:
+      type: object
+      additionalProperties: false
+      required: [name, email, password]
+      properties:
+        name:
+          type: string
+          minLength: 2
+          maxLength: 80
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          minLength: 12
+          maxLength: 72
+    LoginInput:
+      type: object
+      additionalProperties: false
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+    FarmInput:
+      type: object
+      additionalProperties: false
+      required: [farmName, location, totalArea, areaUnit]
+      properties:
+        farmName:
+          type: string
+          minLength: 2
+          maxLength: 100
+        location:
+          type: string
+          minLength: 2
+          maxLength: 160
+        totalArea:
+          type: number
+          exclusiveMinimum: 0
+        areaUnit:
+          type: string
+          enum: [hectares, acres, square_meters]
+        soilType:
+          type: [string, "null"]
+          maxLength: 80
+        description:
+          type: [string, "null"]
+          maxLength: 2000
+    FieldInput:
+      type: object
+      additionalProperties: false
+      required: [farmId, fieldName, area, areaUnit]
+      properties:
+        farmId:
+          type: string
+          format: uuid
+        fieldName:
+          type: string
+          minLength: 2
+          maxLength: 100
+        area:
+          type: number
+          exclusiveMinimum: 0
+        areaUnit:
+          type: string
+          enum: [hectares, acres, square_meters]
+        soilType:
+          type: [string, "null"]
+        status:
+          type: string
+          enum: [active, fallow, planning, harvested]
+    CropInput:
+      type: object
+      additionalProperties: false
+      required: [fieldId, cropName]
+      properties:
+        fieldId:
+          type: string
+          format: uuid
+        cropName:
+          type: string
+          minLength: 2
+          maxLength: 100
+        variety:
+          type: [string, "null"]
+        plantingDate:
+          type: [string, "null"]
+          format: date
+        expectedHarvestDate:
+          type: [string, "null"]
+          format: date
+        growthStage:
+          type: string
+          enum: [planned, seedling, vegetative, flowering, fruiting, maturing, harvested]
+        notes:
+          type: [string, "null"]
+    IrrigationInput:
+      type: object
+      additionalProperties: false
+      required: [fieldId]
+      properties:
+        fieldId:
+          type: string
+          format: uuid
+        moisturePercent:
+          type: number
+          minimum: 0
+          maximum: 100
+        waterLiters:
+          type: number
+          minimum: 0
+          default: 0
+        notes:
+          type: [string, "null"]
+        simulateMoisture:
+          type: boolean
+          default: false
+    MarketPriceInput:
+      type: object
+      additionalProperties: false
+      required: [cropId, marketName, price, currency, unit]
+      properties:
+        cropId:
+          type: string
+          format: uuid
+        marketName:
+          type: string
+          minLength: 2
+          maxLength: 120
+        price:
+          type: number
+          minimum: 0
+        currency:
+          type: string
+          pattern: "^[A-Z]{3}$"
+        unit:
+          type: string
+          minLength: 1
+          maxLength: 32
